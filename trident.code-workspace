@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		"cSpell.words": [
+			"chrono",
+			"libpolymerium",
+			"libtrident",
+			"Polymerium"
+		],
+		"rust-analyzer.showUnlinkedFileNotification": false
+	}
+}
