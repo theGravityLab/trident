@@ -1,7 +1,18 @@
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 
 #[derive(Subcommand, Debug)]
 pub enum InstanceModule {
-    Create,
+    Create(CreateCommand),
     Import,
+}
+
+#[derive(Args, Debug)]
+pub struct CreateCommand{
+    #[arg(short, long)]
+    pub version: Option<String>,
+    #[arg(short, long)]
+    pub author: Option<String>,
+    #[arg(short, long)]
+    pub summary: Option<String>,
+    pub name: String,
 }

@@ -9,6 +9,7 @@
 			"chrono",
 			"libpolymerium",
 			"libtrident",
+			"polylock",
 			"Polymerium"
 		],
 		"rust-analyzer.showUnlinkedFileNotification": false
