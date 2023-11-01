@@ -8,10 +8,11 @@ authors = ["Chien Zhang(zqy0224@live.com)"]
 
 [dependencies]
 url = { version = "2.4", features = ["serde"] }
+url-builder = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.33", features = ["full"] }
 ron = "0.8"
 thiserror = "1.0"
-uuid = {version = "1.5", features = ["v4"]}
+uuid = { version = "1.5", features = ["v4"] }
 sanitize-filename = "0.5"

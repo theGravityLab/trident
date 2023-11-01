@@ -1,8 +1,8 @@
+use crate::profile::{Component, Layer, Profile};
+use sanitize_filename::sanitize;
 use std::fs;
 use std::path::{Path, PathBuf};
-use sanitize_filename::sanitize;
 use thiserror::Error;
-use crate::profile::{Component, Layer, Profile};
 
 const INSTANCE_DIR: &str = "instances";
 const STORAGE_DIR: &str = "storage";
@@ -24,15 +24,13 @@ pub struct Machine {
 
 impl Machine {
     pub fn new<P: Into<PathBuf>>(root: P) -> Self {
-        Self {
-            root: root.into()
-        }
+        Self { root: root.into() }
     }
 
     pub fn load_profile(&self, file: &str) -> Result<Profile, MachineError> {
         let path = self.root.join(INSTANCE_DIR).join(file);
         if let Ok(text) = fs::read_to_string(path) {
-            if let Ok(profile) = Profile::from_ron(&text){
+            if let Ok(profile) = Profile::from_ron(&text) {
                 Ok(profile)
             } else {
                 Err(MachineError::Unreachable)
@@ -42,7 +40,13 @@ impl Machine {
         }
     }
 
-    pub fn create_profile(&self, name: &str, author: Option<&str>, summary: Option<&str>, version: Option<&str>) -> Result<Profile, MachineError> {
+    pub fn create_profile(
+        &self,
+        name: &str,
+        author: Option<&str>,
+        summary: Option<&str>,
+        version: Option<&str>,
+    ) -> Result<Profile, MachineError> {
         let file = sanitize(name);
         let path = self.root.join(INSTANCE_DIR).join(format!("{}.ron", file));
         if !path.exists() {

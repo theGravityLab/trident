@@ -9,6 +9,6 @@ pub struct DeployCommand {
 }
 
 #[derive(Debug, Args)]
-pub struct InspectCommand{
-    pub file: String
+pub struct InspectCommand {
+    pub file: String,
 }

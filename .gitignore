@@ -17,4 +17,4 @@ Cargo.lock
 .idea/
 .vscode/
 
-.polymerium/
+.trident/

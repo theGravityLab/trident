@@ -19,13 +19,13 @@
 // trident resource search --repository {} --take {} --skip --filters {{}} {} $:keyword
 // trident resource resolve $:poly-res
 
-// deploy 
+// deploy
 // 第一步 Flatten，根据 Metadata 构建出 Polylock
 // 这一步需要解析所有资源文件和依赖并导出，以便下次可以直接仅检查文件完整性即可启动游戏
 // 第二步 Restore，即检查并补全文件到 Polylock 状态
 
-use clap::{Parser, Subcommand};
 use crate::cli::generic::{DeployCommand, InspectCommand};
+use clap::{Parser, Subcommand};
 
 use self::{generic::RunCommand, instance::InstanceModule};
 

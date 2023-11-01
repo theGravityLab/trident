@@ -2,7 +2,7 @@ use chrono::{DateTime, Utc};
 use ron::de::SpannedError;
 use serde::{Deserialize, Serialize};
 use url::Url;
-use uuid::Uuid;
+use crate::resource::Res;
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Profile {
@@ -10,7 +10,7 @@ pub struct Profile {
     pub author: String,
     pub summary: String,
     pub thumbnail: Option<Url>,
-    pub reference: Option<Url>,
+    pub reference: Option<Res>,
     pub metadata: Metadata,
     pub timeline: Vec<TimelinePoint>,
 }
@@ -49,17 +49,15 @@ impl Component {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Layer {
-    pub id: String,
-    pub from: Option<Url>,
+    pub from: Option<Res>,
     pub summary: String,
     pub enabled: bool,
-    pub content: Vec<Url>,
+    pub content: Vec<Res>,
 }
 
 impl Layer {
-    pub fn new(summary: Option<&str>, from: Option<Url>) -> Self {
+    pub fn new(summary: Option<&str>, from: Option<Res>) -> Self {
         Layer {
-            id: Uuid::new_v4().to_string(),
             summary: if let Some(s) = summary {
                 s.to_string()
             } else {
@@ -81,10 +79,10 @@ pub struct TimelinePoint {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Action {
-    Create(Url),
+    Create(Res),
     Restore,
     Play,
-    Update(Url),
+    Update(Res),
 }
 
 #[derive(Serialize, Deserialize, Debug)]
