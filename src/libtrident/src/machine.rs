@@ -1,7 +1,9 @@
-use crate::profile::{Component, Layer, Profile};
+use crate::deploy::DeployMachine;
+use crate::instance::{Instance, InstanceError};
+use crate::profile::{Component, Profile};
 use sanitize_filename::sanitize;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use thiserror::Error;
 
 const INSTANCE_DIR: &str = "instances";
@@ -10,6 +12,8 @@ const CACHE_DIR: &str = "cache";
 
 #[derive(Error, Debug)]
 pub enum MachineError {
+    #[error("Unknown stands for UNKNOWN")]
+    Unknown,
     #[error("Not found or inaccessible")]
     Unreachable,
     #[error("Can't create due to object conflict with the same key({0})")]
@@ -73,6 +77,17 @@ impl Machine {
             }
         } else {
             Err(MachineError::Conflict(path.to_str().unwrap().to_string()))
+        }
+    }
+
+    pub fn deploy(&self, file: &str) -> Result<DeployMachine, MachineError> {
+        let path = self.root.join(INSTANCE_DIR).join(file);
+        match Instance::from_path(path) {
+            Ok(instance) => Ok(DeployMachine::new(instance)),
+            Err(err) => match err {
+                InstanceError::FileNotFound => Err(MachineError::Unreachable),
+                _ => Err(MachineError::Unknown),
+            },
         }
     }
 }

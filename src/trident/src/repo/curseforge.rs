@@ -1,19 +1,27 @@
-use std::collections::HashMap;
 use libtrident::repo::Repository;
-use libtrident::resolve::ResolveResult;
+use libtrident::resolve::ResolveError;
+use libtrident::resource::{Project, Version};
 
 pub struct CurseForge {}
 
 impl Repository for CurseForge {
-    fn id() -> &'static str {
+    fn id(&self) -> &'static str {
         "curseforge"
     }
 
-    fn search() {
+    fn search(&self) {
         todo!()
     }
 
-    fn resolve(&self, kind: &str, path: &str, fields: &HashMap<String, String>) -> ResolveResult {
+    fn get_project(&self, project_id: &str) -> Result<Project, ResolveError> {
+        todo!()
+    }
+
+    fn get_versions(&self, project_id: &str) -> Result<Vec<String>, ResolveError> {
+        todo!()
+    }
+
+    fn get_version(&self, project_id: &str, version_id: &str) -> Result<Version, ResolveError> {
         todo!()
     }
 }

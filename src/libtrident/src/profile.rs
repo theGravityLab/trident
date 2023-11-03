@@ -2,7 +2,6 @@ use chrono::{DateTime, Utc};
 use ron::de::SpannedError;
 use serde::{Deserialize, Serialize};
 use url::Url;
-use crate::resource::Res;
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Profile {
@@ -10,7 +9,7 @@ pub struct Profile {
     pub author: String,
     pub summary: String,
     pub thumbnail: Option<Url>,
-    pub reference: Option<Res>,
+    pub reference: Option<String>,
     pub metadata: Metadata,
     pub timeline: Vec<TimelinePoint>,
 }
@@ -26,13 +25,19 @@ impl Profile {
 }
 
 // 需要有一种方法来求 Metadata 的 digest，用于 polylock 有效性验证
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Hash)]
 pub struct Metadata {
     pub components: Vec<Component>,
     pub attachments: Vec<Layer>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+impl Metadata {
+    pub fn digest(&self) -> String {
+        todo!()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Hash)]
 pub struct Component {
     pub id: String,
     pub version: String,
@@ -47,16 +52,16 @@ impl Component {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Hash)]
 pub struct Layer {
-    pub from: Option<Res>,
+    pub from: Option<String>,
     pub summary: String,
     pub enabled: bool,
-    pub content: Vec<Res>,
+    pub content: Vec<String>,
 }
 
 impl Layer {
-    pub fn new(summary: Option<&str>, from: Option<Res>) -> Self {
+    pub fn new(summary: Option<&str>, from: Option<String>) -> Self {
         Layer {
             summary: if let Some(s) = summary {
                 s.to_string()
@@ -79,10 +84,10 @@ pub struct TimelinePoint {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Action {
-    Create(Res),
+    Create(String),
     Restore,
     Play,
-    Update(Res),
+    Update(String),
 }
 
 #[derive(Serialize, Deserialize, Debug)]

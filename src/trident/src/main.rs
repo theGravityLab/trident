@@ -1,11 +1,14 @@
 // libtrident 类似 Polymerium.Abstractions 和 Polymerium.Core
 // trident 则作为命令解释器执行
 
-use anyhow::{Result};
+use anyhow::Result;
 use clap::Parser;
 use console::style;
+use indicatif::{ProgressBar, ProgressStyle};
 use libtrident::machine::Machine;
 use std::io::{BufWriter, Write};
+use std::thread::sleep;
+use std::time::Duration;
 
 use crate::cli::instance::InstanceModule;
 use crate::cli::{CliArgs, CliModule};
@@ -21,29 +24,31 @@ fn main() {
     // 无论任何操作都有可能得到多条可能包含错误的输出，对于只需要结果的（例如 trident inspect）要求在进程正常退
     // 出后检查所有输出中是否有需要的结果，如果没有则检查最后一条错误。
     // 对于需要过程的，在进程退出之前，都可以即时捕获而非缓存输出并处理。
-    
+
     // 原则上 trident 对 .trident 目录拥有所有权，Polymerium 不应该访问 .trident 来确定信息，所有对文件的操
     // 做都应该借助 trident 完成。
     let pretty: bool;
-    if let Ok(args) = if std::env::args_os().any(|f| f == "--pretty") {
+    match if std::env::args_os().any(|f| f == "--pretty") {
         pretty = true;
         CliArgs::try_parse_from(std::env::args_os().filter(|f| f != "--pretty"))
     } else {
         pretty = false;
         CliArgs::try_parse()
     } {
-        #[cfg(debug_assertions)]
-        let root = std::env::current_dir().unwrap().join(".trident");
-        #[cfg(not(debug_assertions))]
-        let root = Path::new("~/.trident");
-        let machine = Machine::new(root);
-        if let Err(err) = process(machine, args, pretty) {
-            // TODO: write error in two modes
-            println!("{:?}", err);
+        Ok(args) => {
+            #[cfg(debug_assertions)]
+            let root = std::env::current_dir().unwrap().join(".trident");
+            #[cfg(not(debug_assertions))]
+            let root = Path::new("~/.trident");
+            let machine = Machine::new(root);
+            if let Err(err) = process(machine, args, pretty) {
+                // TODO: write error in two modes
+                println!("{:?}", err);
+            }
         }
-    } else {
-        // TODO: write error in two modes
-        println!("parse failed");
+        Err(err) => {
+            eprintln!("{}", err);
+        }
     }
 }
 
@@ -122,7 +127,14 @@ fn process(machine: Machine, args: CliArgs, pretty: bool) -> Result<()> {
             _ => unimplemented!(),
         },
         CliModule::Deploy(it) => {
-            todo!()
+            let deploy = machine.deploy(&it.file)?;
+            let bar = ProgressBar::new_spinner();
+            bar.set_style(ProgressStyle::with_template("{spinner:.magenta} {msg}").unwrap());
+            bar.set_message("Check polylock status");
+            bar.enable_steady_tick(Duration::from_millis(100));
+            sleep(Duration::from_secs(5));
+            bar.finish();
+            Ok(())
         }
         _ => unimplemented!(),
     }
