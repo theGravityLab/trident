@@ -1,5 +1,6 @@
+use std::rc::Rc;
 use crate::repo::Repository;
-use crate::resource::Version;
+use crate::packages::{Package};
 use packageurl::PackageUrl;
 use std::str::FromStr;
 use thiserror::Error;
@@ -16,58 +17,61 @@ pub enum ResolveError {
     Unsupported,
 }
 
-#[derive(Default)]
 pub struct ResolveEngine {
-    repositories: Vec<Box<dyn Repository>>,
+    repo_factory: fn(&str) -> Option<Rc<dyn Repository>>,
     tasks: Vec<String>,
 }
 
 impl ResolveEngine {
-    pub fn add_repository<R: Repository + 'static>(&mut self, repo: R) {
-        self.repositories.push(Box::new(repo))
-    }
-
-    pub fn add_task(&mut self, res: String) {
-        self.tasks.push(res)
-    }
-}
-
-impl IntoIterator for ResolveEngine {
-    type Item = Result<Version, ResolveError>;
-    type IntoIter = IntoIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        IntoIter { engine: self }
+    pub fn new(tasks: Vec<String>, repo_factory: fn(&str) -> Option<Rc<dyn Repository>>) -> Self {
+        Self {
+            repo_factory,
+            tasks,
+        }
     }
 }
 
-pub struct IntoIter {
-    engine: ResolveEngine,
-}
-
-impl Iterator for IntoIter {
-    type Item = Result<Version, ResolveError>;
+impl Iterator for ResolveEngine {
+    type Item = ResolveHandle;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if let Some(item) = self.engine.tasks.pop() {
-            if let Ok(purl) = PackageUrl::from_str(&item) {
-                if let Some(vid) = purl.version() {
-                    let rid = purl.ty();
-                    let pid = purl.name();
-                    for repo in &self.engine.repositories {
-                        if repo.id() == rid {
-                            return Some(repo.get_version(pid, vid));
-                        }
-                    }
-                    Some(Err(ResolveError::NotFound))
-                } else {
-                    Some(Err(ResolveError::InvalidFormat))
-                }
-            } else {
-                Some(Err(ResolveError::InvalidFormat))
-            }
+        if let Some(item) = self.tasks.pop() {
+            Some(ResolveHandle {
+                task: item,
+                repo_factory: self.repo_factory,
+            })
         } else {
             None
         }
+    }
+}
+
+pub struct ResolveHandle {
+    repo_factory: fn(&str) -> Option<Rc<dyn Repository>>,
+    task: String,
+}
+
+impl ResolveHandle {
+    pub fn perform(&self) -> Result<Package, ResolveError> {
+        if let Ok(purl) = PackageUrl::from_str(&self.task) {
+            if let Some(vid) = purl.version() {
+                let rid = purl.ty();
+                let pid = purl.name();
+                let f = self.repo_factory;
+                if let Some(repo) = f(rid) {
+                    repo.resolve(pid, vid)
+                } else {
+                    Err(ResolveError::NotFound)
+                }
+            } else {
+                Err(ResolveError::InvalidFormat)
+            }
+        } else {
+            Err(ResolveError::InvalidFormat)
+        }
+    }
+
+    pub fn task(&self) -> &str {
+        self.task.as_str()
     }
 }

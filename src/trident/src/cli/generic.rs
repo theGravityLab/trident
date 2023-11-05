@@ -7,6 +7,8 @@ pub struct RunCommand {}
 pub struct DeployCommand {
     #[arg(short, long)]
     pub force: bool,
+    #[arg(short, long)]
+    pub depth: Option<usize>,
     pub file: String,
 }
 

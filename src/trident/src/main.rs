@@ -3,15 +3,17 @@
 
 use anyhow::Result;
 use clap::Parser;
-use console::style;
-use indicatif::{ProgressBar, ProgressStyle};
+use console::{style, Style};
+use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use libtrident::machine::Machine;
 use std::io::{BufWriter, Write};
-use std::thread::sleep;
-use std::time::Duration;
+use std::rc::Rc;
+use libtrident::deploy::DeployStage;
+use libtrident::repo::Repository;
 
 use crate::cli::instance::InstanceModule;
 use crate::cli::{CliArgs, CliModule};
+use crate::repo::curseforge::CurseForge;
 
 mod cli;
 mod io;
@@ -37,9 +39,9 @@ fn main() {
     } {
         Ok(args) => {
             #[cfg(debug_assertions)]
-            let root = std::env::current_dir().unwrap().join(".trident");
+                let root = std::env::current_dir().unwrap().join(".trident");
             #[cfg(not(debug_assertions))]
-            let root = Path::new("~/.trident");
+                let root = Path::new("~/.trident");
             let machine = Machine::new(root);
             if let Err(err) = process(machine, args, pretty) {
                 // TODO: write error in two modes
@@ -87,7 +89,7 @@ fn process(machine: Machine, args: CliArgs, pretty: bool) -> Result<()> {
                             },
                             if !l.enabled { ",🚫" } else { "" }
                         ))
-                        .cyan()
+                            .cyan()
                     )?;
                     for a in &l.content {
                         writeln!(
@@ -127,15 +129,68 @@ fn process(machine: Machine, args: CliArgs, pretty: bool) -> Result<()> {
             _ => unimplemented!(),
         },
         CliModule::Deploy(it) => {
-            let deploy = machine.deploy(&it.file)?;
-            let bar = ProgressBar::new_spinner();
-            bar.set_style(ProgressStyle::with_template("{spinner:.magenta} {msg}").unwrap());
-            bar.set_message("Check polylock status");
-            bar.enable_steady_tick(Duration::from_millis(100));
-            sleep(Duration::from_secs(5));
-            bar.finish();
+            let engine = machine.deploy(&it.file, it.force, if let Some(depth) = it.depth { depth } else { 99 }, locate_repo)?;
+            let bar = MultiProgress::new();
+            let style = ProgressStyle::with_template("{prefix:.bold.dim} {wide_msg}").unwrap();
+            for stage in engine {
+                match stage {
+                    DeployStage::Check(mut check) => {
+                        let p = bar.add(ProgressBar::new_spinner());
+                        p.set_style(style.clone());
+                        p.set_message("Check polylock status...");
+                        check.perform();
+                        p.finish();
+                    }
+                    DeployStage::Resolve(resolve) => {
+                        let p = bar.add(ProgressBar::new_spinner());
+                        p.set_style(style.clone());
+                        p.set_message("Resolve attachments...");
+                        let sub = ProgressBar::new_spinner();
+                        sub.set_style(ProgressStyle::with_template("{prefix:>12.cyan.bold} {wide_msg:.dim}").unwrap());
+                        sub.set_prefix("Resolving");
+                        let mut failed = false;
+                        let ok_style = Style::new().green().bold();
+                        let err_style = Style::new().red().bold();
+                        for mut handle in resolve {
+                            sub.set_message(handle.task().to_string());
+                            match handle.perform() {
+                                Ok(package) => {
+                                    sub.println(format!("{:>12} {}@{}", ok_style.apply_to("Resolved"), package.project_name, package.version_name));
+                                }
+                                Err(_) => {
+                                    sub.println(format!("{:>12} {}", err_style.apply_to("Failed"), handle.task()));
+                                    sub.finish();
+                                    failed = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if failed {
+                            break;
+                        } else {
+                            p.finish();
+                        }
+                    }
+                    DeployStage::Install => {
+                        todo!()
+                    }
+                    DeployStage::Download => {
+                        todo!()
+                    }
+                    DeployStage::Restore => {
+                        todo!()
+                    }
+                }
+            }
             Ok(())
         }
         _ => unimplemented!(),
+    }
+}
+
+fn locate_repo(rid: &str) -> Option<Rc<dyn Repository>> {
+    match rid {
+        "curseforge" => Some(Rc::new(CurseForge::new())),
+        _ => None
     }
 }
