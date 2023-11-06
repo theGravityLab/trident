@@ -7,10 +7,23 @@
 	"settings": {
 		"cSpell.words": [
 			"chrono",
+			"curseforge",
+			"fabricmc",
+			"hasher",
 			"libpolymerium",
 			"libtrident",
+			"minecraftforge",
+			"modpack",
+			"NEOFORGE",
+			"neoforged",
+			"packageurl",
 			"polylock",
-			"Polymerium"
+			"Polymerium",
+			"quiltmc",
+			"reqwest",
+			"resourcepack",
+			"shaderpack",
+			"thiserror"
 		],
 		"rust-analyzer.showUnlinkedFileNotification": false
 	}

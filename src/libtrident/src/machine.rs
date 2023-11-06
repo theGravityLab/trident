@@ -1,12 +1,11 @@
 use crate::deploy::DeployEngine;
 use crate::instance::{Instance, InstanceError};
-use crate::profile::{Component, Profile};
+use crate::profile::Profile;
+use crate::repo::Repository;
 use sanitize_filename::sanitize;
 use std::fs;
 use std::path::PathBuf;
-use std::rc::Rc;
 use thiserror::Error;
-use crate::repo::Repository;
 
 const INSTANCE_DIR: &str = "instances";
 const STORAGE_DIR: &str = "storage";
@@ -49,9 +48,9 @@ impl Machine {
     pub fn create_profile(
         &self,
         name: &str,
+        version: &str,
         author: Option<&str>,
         summary: Option<&str>,
-        version: Option<&str>,
     ) -> Result<Profile, MachineError> {
         let file = sanitize(name);
         let path = self.root.join(INSTANCE_DIR).join(format!("{}.ron", file));
@@ -68,10 +67,7 @@ impl Machine {
             if let Some(summary) = summary {
                 profile.summary = summary.to_string();
             }
-            if let Some(version) = version {
-                let component = Component::new("net.minecraft", version);
-                profile.metadata.components.push(component);
-            }
+            profile.metadata.version = version.to_owned();
             if fs::write(path, profile.to_ron().unwrap()).is_ok() {
                 Ok(profile)
             } else {
@@ -82,14 +78,25 @@ impl Machine {
         }
     }
 
-    pub fn deploy(&self, file: &str, force: bool, max_resolve_depth: usize, repo_factory: fn(&str) -> Option<Rc<dyn Repository>>) -> Result<DeployEngine, MachineError> {
+    pub fn deploy(
+        &self,
+        file: &str,
+        force: bool,
+        max_resolve_depth: usize,
+        repos: Vec<Box<dyn Repository>>,
+    ) -> Result<DeployEngine, MachineError> {
         let path = self.root.join(INSTANCE_DIR).join(file);
         match Instance::from_path(path) {
-            Ok(instance) => Ok(DeployEngine::new(instance, force, max_resolve_depth, repo_factory)),
-            Err(err) => match err {
-                InstanceError::FileNotFound => Err(MachineError::Unreachable),
-                _ => Err(MachineError::Unknown),
-            },
+            Ok(instance) => Ok(DeployEngine::new(instance, force, max_resolve_depth, repos)),
+            Err(err) => Err(Self::instance_into_error(err)),
+        }
+    }
+
+    fn instance_into_error(error: InstanceError) -> MachineError {
+        match error {
+            InstanceError::FileNotFound => MachineError::Unreachable,
+            InstanceError::InvalidProfile => MachineError::Unreachable,
+            InstanceError::FileSystemError => MachineError::FileSystemError,
         }
     }
 }

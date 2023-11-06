@@ -1,7 +1,26 @@
+use std::{
+    collections::hash_map::DefaultHasher,
+    hash::{Hash, Hasher},
+};
+
 use chrono::{DateTime, Utc};
 use ron::de::SpannedError;
 use serde::{Deserialize, Serialize};
 use url::Url;
+
+pub const COMPONENT_MINECRAFT: &str = "net.minecraft";
+pub const COMPONENT_FORGE: &str = "net.minecraftforge";
+pub const COMPONENT_NEOFORGE: &str = "net.neoforged";
+pub const COMPONENT_FABRIC: &str = "net.fabricmc.fabric-loader";
+pub const COMPONENT_QUILT: &str = "org.quiltmc.quilt-loader";
+pub const COMPONENT_BUILTIN_STORAGE: &str = "builtin.trident.storage";
+
+pub const LOADERS: [&str; 4] = [
+    COMPONENT_FABRIC,
+    COMPONENT_QUILT,
+    COMPONENT_FORGE,
+    COMPONENT_NEOFORGE,
+];
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Profile {
@@ -27,23 +46,26 @@ impl Profile {
 // 需要有一种方法来求 Metadata 的 digest，用于 polylock 有效性验证
 #[derive(Serialize, Deserialize, Debug, Default, Hash)]
 pub struct Metadata {
-    pub components: Vec<Component>,
+    pub version: String,
+    pub loaders: Vec<Loader>,
     pub attachments: Vec<Layer>,
 }
 
 impl Metadata {
     pub fn digest(&self) -> String {
-        todo!()
+        let mut hasher = DefaultHasher::new();
+        self.hash(&mut hasher);
+        hasher.finish().to_string()
     }
 }
 
 #[derive(Serialize, Deserialize, Debug, Hash)]
-pub struct Component {
+pub struct Loader {
     pub id: String,
     pub version: String,
 }
 
-impl Component {
+impl Loader {
     pub fn new(id: &str, version: &str) -> Self {
         Self {
             id: id.to_string(),

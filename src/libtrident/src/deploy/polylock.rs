@@ -1,4 +1,4 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
-pub struct PolylockData{}
+pub struct PolylockData {}

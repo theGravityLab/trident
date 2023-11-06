@@ -5,11 +5,9 @@ use anyhow::Result;
 use clap::Parser;
 use console::{style, Style};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
+use libtrident::deploy::DeployStage;
 use libtrident::machine::Machine;
 use std::io::{BufWriter, Write};
-use std::rc::Rc;
-use libtrident::deploy::DeployStage;
-use libtrident::repo::Repository;
 
 use crate::cli::instance::InstanceModule;
 use crate::cli::{CliArgs, CliModule};
@@ -17,6 +15,7 @@ use crate::repo::curseforge::CurseForge;
 
 mod cli;
 mod io;
+mod models;
 mod repo;
 
 // 导入整合包的过程中例外文件存放在 storage 中的子目录，并会自动添加一个 io.github.trident.storage 到组件中，
@@ -39,9 +38,9 @@ fn main() {
     } {
         Ok(args) => {
             #[cfg(debug_assertions)]
-                let root = std::env::current_dir().unwrap().join(".trident");
+            let root = std::env::current_dir().unwrap().join(".trident");
             #[cfg(not(debug_assertions))]
-                let root = Path::new("~/.trident");
+            let root = Path::new("~/.trident");
             let machine = Machine::new(root);
             if let Err(err) = process(machine, args, pretty) {
                 // TODO: write error in two modes
@@ -70,7 +69,7 @@ fn process(machine: Machine, args: CliArgs, pretty: bool) -> Result<()> {
                 )?;
                 writeln!(buf, "{}", style(&profile.summary))?;
                 writeln!(buf, "{}", style("Components:").blue().bold())?;
-                for c in &profile.metadata.components {
+                for c in &profile.metadata.loaders {
                     writeln!(buf, "{:>24} {}", c.id, style(&c.version).dim())?;
                 }
                 writeln!(buf, "{}", style("Attachments:").blue().bold())?;
@@ -89,7 +88,7 @@ fn process(machine: Machine, args: CliArgs, pretty: bool) -> Result<()> {
                             },
                             if !l.enabled { ",🚫" } else { "" }
                         ))
-                            .cyan()
+                        .cyan()
                     )?;
                     for a in &l.content {
                         writeln!(
@@ -111,9 +110,9 @@ fn process(machine: Machine, args: CliArgs, pretty: bool) -> Result<()> {
             InstanceModule::Create(create) => {
                 let _ = machine.create_profile(
                     &create.name,
+                    create.version.as_str(),
                     create.author.as_deref(),
                     create.summary.as_deref(),
-                    create.version.as_deref(),
                 )?;
                 if pretty {
                     todo!()
@@ -129,7 +128,16 @@ fn process(machine: Machine, args: CliArgs, pretty: bool) -> Result<()> {
             _ => unimplemented!(),
         },
         CliModule::Deploy(it) => {
-            let engine = machine.deploy(&it.file, it.force, if let Some(depth) = it.depth { depth } else { 99 }, locate_repo)?;
+            let engine = machine.deploy(
+                &it.file,
+                it.force,
+                if let Some(depth) = it.depth {
+                    depth
+                } else {
+                    99
+                },
+                vec![Box::new(CurseForge::new())],
+            )?;
             let bar = MultiProgress::new();
             let style = ProgressStyle::with_template("{prefix:.bold.dim} {wide_msg}").unwrap();
             for stage in engine {
@@ -146,19 +154,32 @@ fn process(machine: Machine, args: CliArgs, pretty: bool) -> Result<()> {
                         p.set_style(style.clone());
                         p.set_message("Resolve attachments...");
                         let sub = ProgressBar::new_spinner();
-                        sub.set_style(ProgressStyle::with_template("{prefix:>12.cyan.bold} {wide_msg:.dim}").unwrap());
+                        sub.set_style(
+                            ProgressStyle::with_template("{prefix:>12.cyan.bold} {wide_msg}")
+                                .unwrap(),
+                        );
                         sub.set_prefix("Resolving");
                         let mut failed = false;
                         let ok_style = Style::new().green().bold();
                         let err_style = Style::new().red().bold();
+                        let version_style = Style::new().dim();
                         for mut handle in resolve {
                             sub.set_message(handle.task().to_string());
                             match handle.perform() {
                                 Ok(package) => {
-                                    sub.println(format!("{:>12} {}@{}", ok_style.apply_to("Resolved"), package.project_name, package.version_name));
+                                    sub.println(format!(
+                                        "{:>12} {}{}",
+                                        ok_style.apply_to("Resolved"),
+                                        package.project_name,
+                                        version_style.apply_to(format!("({})", package.filename))
+                                    ));
                                 }
                                 Err(_) => {
-                                    sub.println(format!("{:>12} {}", err_style.apply_to("Failed"), handle.task()));
+                                    sub.println(format!(
+                                        "{:>12} {}",
+                                        err_style.apply_to("Failed"),
+                                        handle.task()
+                                    ));
                                     sub.finish();
                                     failed = true;
                                     break;
@@ -185,12 +206,5 @@ fn process(machine: Machine, args: CliArgs, pretty: bool) -> Result<()> {
             Ok(())
         }
         _ => unimplemented!(),
-    }
-}
-
-fn locate_repo(rid: &str) -> Option<Rc<dyn Repository>> {
-    match rid {
-        "curseforge" => Some(Rc::new(CurseForge::new())),
-        _ => None
     }
 }

@@ -1,12 +1,14 @@
-use std::rc::Rc;
-use crate::repo::Repository;
-use crate::packages::{Package};
+use crate::repo::{Repository, RepositoryContext};
+use crate::resources::Package;
 use packageurl::PackageUrl;
+use std::rc::Rc;
 use std::str::FromStr;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ResolveError {
+    #[error("Unspecific error")]
+    Unknown,
     #[error("Resource is not found in the repository")]
     NotFound,
     #[error("Cannot reach the resource due to network error")]
@@ -15,19 +17,18 @@ pub enum ResolveError {
     InvalidFormat,
     #[error("Repository specified is not supported")]
     Unsupported,
+    #[error("Response is invalid or cannot parsed into")]
+    UnableToParse,
 }
 
 pub struct ResolveEngine {
-    repo_factory: fn(&str) -> Option<Rc<dyn Repository>>,
+    repos: Rc<Vec<Box<dyn Repository>>>,
     tasks: Vec<String>,
 }
 
 impl ResolveEngine {
-    pub fn new(tasks: Vec<String>, repo_factory: fn(&str) -> Option<Rc<dyn Repository>>) -> Self {
-        Self {
-            repo_factory,
-            tasks,
-        }
+    pub fn new(tasks: Vec<String>, repos: Rc<Vec<Box<dyn Repository>>>) -> Self {
+        Self { repos, tasks }
     }
 }
 
@@ -38,7 +39,7 @@ impl Iterator for ResolveEngine {
         if let Some(item) = self.tasks.pop() {
             Some(ResolveHandle {
                 task: item,
-                repo_factory: self.repo_factory,
+                repos: Rc::clone(&self.repos),
             })
         } else {
             None
@@ -47,19 +48,18 @@ impl Iterator for ResolveEngine {
 }
 
 pub struct ResolveHandle {
-    repo_factory: fn(&str) -> Option<Rc<dyn Repository>>,
+    repos: Rc<Vec<Box<dyn Repository>>>,
     task: String,
 }
 
 impl ResolveHandle {
-    pub fn perform(&self) -> Result<Package, ResolveError> {
+    pub fn perform(&self, context: &RepositoryContext) -> Result<Package, ResolveError> {
         if let Ok(purl) = PackageUrl::from_str(&self.task) {
             if let Some(vid) = purl.version() {
                 let rid = purl.ty();
                 let pid = purl.name();
-                let f = self.repo_factory;
-                if let Some(repo) = f(rid) {
-                    repo.resolve(pid, vid)
+                if let Some(repo) = self.repos.iter().find(|r| r.id() == rid) {
+                    repo.resolve(pid, vid, context)
                 } else {
                     Err(ResolveError::NotFound)
                 }

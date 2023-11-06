@@ -9,7 +9,7 @@ pub enum InstanceModule {
 #[derive(Args, Debug)]
 pub struct CreateCommand {
     #[arg(short, long)]
-    pub version: Option<String>,
+    pub version: String,
     #[arg(short, long)]
     pub author: Option<String>,
     #[arg(short, long)]

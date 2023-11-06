@@ -12,17 +12,16 @@
 //  Downloading http://example.com/file.txt
 // [...] Restore instance
 
-use std::cell::{Ref, RefCell};
-use std::collections::hash_map::DefaultHasher;
-use std::fs;
-use std::hash::{Hash, Hasher};
-use std::path::{PathBuf};
-use std::rc::Rc;
 use crate::deploy::polylock::PolylockData;
 use crate::instance::Instance;
-use crate::repo::Repository;
+use crate::profile;
+use crate::repo::{Repository, RepositoryContext};
 use crate::resolve::{ResolveEngine, ResolveError, ResolveHandle};
-use crate::packages::{Package};
+use crate::resources::Package;
+use std::cell::RefCell;
+use std::fs;
+use std::path::PathBuf;
+use std::rc::Rc;
 
 pub mod polylock;
 
@@ -56,16 +55,36 @@ impl DeployContext {
 
 pub struct DeployEngine {
     context: Rc<RefCell<DeployContext>>,
-    repo_factory: fn(&str) -> Option<Rc<dyn Repository>>,
+    repo_context: Rc<RepositoryContext>,
+    repos: Rc<Vec<Box<dyn Repository>>>,
     forced: bool,
     max_resolve_depth: usize,
 }
 
 impl DeployEngine {
-    pub fn new(instance: Instance, force: bool, max_resolve_depth: usize, repo_factory: fn(&str) -> Option<Rc<dyn Repository>>) -> Self {
+    pub fn new(
+        instance: Instance,
+        force: bool,
+        max_resolve_depth: usize,
+        repos: Vec<Box<dyn Repository>>,
+    ) -> Self {
+        let mut repo_context = RepositoryContext {
+            kind: None,
+            game_version: None,
+            mod_loader: None,
+        };
+        repo_context.game_version = Some(instance.profile().metadata.version.to_owned());
+        repo_context.mod_loader = instance
+            .profile()
+            .metadata
+            .loaders
+            .iter()
+            .find(|c| profile::LOADERS.contains(&c.id.as_str()))
+            .map(|c| c.id.to_owned());
         Self {
             context: Rc::new(RefCell::new(DeployContext::new(instance))),
-            repo_factory,
+            repo_context: Rc::new(repo_context),
+            repos: Rc::new(repos),
             forced: force,
             max_resolve_depth,
         }
@@ -81,7 +100,12 @@ impl Iterator for DeployEngine {
         if self.forced {
             self.forced = false;
             self.context.borrow_mut().checked = true;
-            Some(DeployStage::Resolve(ResolveStage::new(Rc::clone(&self.context), self.max_resolve_depth, self.repo_factory)))
+            Some(DeployStage::Resolve(ResolveStage::new(
+                Rc::clone(&self.context),
+                self.max_resolve_depth,
+                Rc::clone(&self.repos),
+                Rc::clone(&self.repo_context),
+            )))
         } else if self.context.borrow().polylock.is_some() {
             if self.context.borrow().downloaded {
                 if self.context.borrow().restored {
@@ -103,10 +127,17 @@ impl Iterator for DeployEngine {
                     Some(DeployStage::Install)
                 }
             } else {
-                Some(DeployStage::Resolve(ResolveStage::new(Rc::clone(&self.context), self.max_resolve_depth, self.repo_factory)))
+                Some(DeployStage::Resolve(ResolveStage::new(
+                    Rc::clone(&self.context),
+                    self.max_resolve_depth,
+                    Rc::clone(&self.repos),
+                    Rc::clone(&self.repo_context),
+                )))
             }
         } else {
-            Some(DeployStage::Check(CheckStage::new(Rc::clone(&self.context))))
+            Some(DeployStage::Check(CheckStage::new(Rc::clone(
+                &self.context,
+            ))))
         }
     }
 }
@@ -125,16 +156,12 @@ pub struct CheckStage {
 
 impl CheckStage {
     fn new(context: Rc<RefCell<DeployContext>>) -> Self {
-        Self {
-            context
-        }
+        Self { context }
     }
 
     pub fn perform(&mut self) {
         if let Some(hash) = self.read_hash() {
-            let mut hasher = DefaultHasher::new();
-            self.context.borrow().instance.profile().metadata.hash(&mut hasher);
-            if hash == hasher.finish().to_string() {
+            if hash == self.context.borrow().instance.profile().metadata.digest() {
                 if let Some(data) = self.read_data() {
                     self.context.borrow_mut().polylock = Some(data)
                 }
@@ -170,24 +197,40 @@ impl CheckStage {
 
 pub struct ResolveStage {
     context: Rc<RefCell<DeployContext>>,
-    sub: Rc<RefCell<ResolveStageContext>>,
-    repo_locate: fn(&str) -> Option<Rc<dyn Repository>>,
+    stage_context: Rc<RefCell<ResolveStageContext>>,
+    repo_context: Rc<RepositoryContext>,
     engine: Option<ResolveEngine>,
     depth: usize,
     max_depth: usize,
 }
 
 impl ResolveStage {
-    fn new(context: Rc<RefCell<DeployContext>>, max_depth: usize, repo_factory: fn(&str) -> Option<Rc<dyn Repository>>) -> Self {
-        let tasks = context.borrow().instance.profile().metadata.attachments.iter().filter(|l| l.enabled).flat_map(|l| &l.content).cloned().collect();
+    fn new(
+        context: Rc<RefCell<DeployContext>>,
+        max_depth: usize,
+        repos: Rc<Vec<Box<dyn Repository>>>,
+        repo_context: Rc<RepositoryContext>,
+    ) -> Self {
+        let tasks = context
+            .borrow()
+            .instance
+            .profile()
+            .metadata
+            .attachments
+            .iter()
+            .filter(|l| l.enabled)
+            .flat_map(|l| &l.content)
+            .cloned()
+            .collect();
         Self {
             context,
-            sub: Rc::new(RefCell::new(ResolveStageContext {
+            stage_context: Rc::new(RefCell::new(ResolveStageContext {
+                repos: Rc::clone(&repos),
                 finished: Vec::new(),
                 processed: Vec::new(),
                 appended: Some(tasks),
             })),
-            repo_locate: repo_factory,
+            repo_context,
             engine: None,
             depth: 0,
             max_depth,
@@ -203,29 +246,33 @@ impl Iterator for ResolveStage {
             if let Some(next) = engine.next() {
                 Some(ResolveStageHandle {
                     handle: next,
-                    context: Rc::clone(&self.sub),
+                    context: Rc::clone(&self.stage_context),
+                    repo_context: Rc::clone(&self.repo_context),
                 })
             } else {
                 self.engine = None;
                 self.next()
             }
         } else if self.max_depth > self.depth {
-            let mut has_next = false;
-            if let Some(appended) = self.sub.borrow_mut().appended.take() {
+            let mut context = self.stage_context.borrow_mut();
+            if let Some(appended) = context.appended.take() {
                 if !appended.is_empty() {
-                    let mut context = self.sub.borrow_mut();
-                    let to_add = appended.iter().filter(|s| !context.processed.contains(s)).cloned().collect::<Vec<String>>();
+                    let to_add = appended
+                        .iter()
+                        .filter(|s| !context.processed.contains(s))
+                        .cloned()
+                        .collect::<Vec<String>>();
                     for add in &to_add {
                         context.processed.push(add.clone());
                     }
-                    let engine = ResolveEngine::new(to_add, self.repo_locate);
+                    let engine = ResolveEngine::new(to_add, Rc::clone(&context.repos));
                     self.engine = Some(engine);
                     self.depth += 1;
-                    has_next = true;
+                    drop(context);
+                    self.next()
+                } else {
+                    None
                 }
-            };
-            if has_next {
-                self.next()
             } else {
                 None
             }
@@ -237,11 +284,12 @@ impl Iterator for ResolveStage {
 
 impl Drop for ResolveStage {
     fn drop(&mut self) {
-        self.context.borrow_mut().resolved = Some(self.sub.borrow().finished.clone())
+        self.context.borrow_mut().resolved = Some(self.stage_context.borrow().finished.clone())
     }
 }
 
 pub struct ResolveStageContext {
+    repos: Rc<Vec<Box<dyn Repository>>>,
     finished: Vec<Package>,
     processed: Vec<String>,
     appended: Option<Vec<String>>,
@@ -250,11 +298,12 @@ pub struct ResolveStageContext {
 pub struct ResolveStageHandle {
     handle: ResolveHandle,
     context: Rc<RefCell<ResolveStageContext>>,
+    repo_context: Rc<RepositoryContext>,
 }
 
 impl ResolveStageHandle {
     pub fn perform(&mut self) -> Result<Package, ResolveError> {
-        let v = self.handle.perform()?;
+        let v = self.handle.perform(self.repo_context.as_ref())?;
         let mut context = self.context.borrow_mut();
         context.finished.push(v.clone());
         if let Some(dependencies) = &v.dependencies {

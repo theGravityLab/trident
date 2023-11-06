@@ -1,3 +1,1 @@
-pub struct DownloadEngine{
-    
-}
+pub struct DownloadEngine {}
