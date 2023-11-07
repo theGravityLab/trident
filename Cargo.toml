@@ -1,3 +1,3 @@
 [workspace]
-members = ["src/trident", "src/libtrident"]
+members = ["src/trident"]
 resolver = "2"
