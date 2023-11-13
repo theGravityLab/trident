@@ -40,7 +40,7 @@ pub struct Mod {
     pub class_id: i32,
     /// List of the mod's authors
     pub authors: Vec<ModAuthor>,
-    /// The mod's logo asset
+    /// The mod's logo.png asset
     pub logo: ModAsset,
     /// List of screenshots assets
     pub screenshots: Vec<ModAsset>,
