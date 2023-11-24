@@ -1,7 +1,199 @@
 use chrono::{DateTime, Utc};
+use reqwest::StatusCode;
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_repr::Deserialize_repr;
 use url::Url;
+
+use crate::profile;
+use crate::repo::{Repository, RepositoryContext, RepositoryLabel};
+use crate::resolve::ResolveError;
+use crate::resources::{Dependency, Package, Requirement, ResourceKind};
+
+const API_KEY: &str = "$2a$10$cjd5uExXA6oMi3lSnylNC.xsFJiujI8uQ/pV1eGltFe/hlDO2mjzm";
+const ENDPOINT: &str = "https://api.curseforge.com";
+
+const GAME_ID: i32 = 432;
+
+const CLASS_MOD: i32 = 6;
+const CLASS_WORLD: i32 = 17;
+const CLASS_MODPACK: i32 = 4471;
+const CLASS_RESOURCEPACK: i32 = 12;
+const CLASS_SHADERPACK: i32 = 6552;
+
+pub struct CurseForge {}
+
+impl CurseForge {
+    fn get<R: DeserializeOwned>(
+        client: &reqwest::blocking::Client,
+        service: &str,
+    ) -> Result<R, reqwest::Error> {
+        let req = client
+            .get(format!("{}{}", ENDPOINT, service))
+            .header("x-api-key", API_KEY);
+        let res = req.send()?;
+        res.json::<Response<R>>().map(|r| r.data)
+    }
+
+    fn make_error(error: reqwest::Error) -> ResolveError {
+        if error.is_redirect() || error.is_timeout() {
+            ResolveError::UnstableNetwork
+        } else if error.is_decode() || error.is_body() {
+            ResolveError::UnableToParse
+        } else if error.is_status() {
+            if let Some(StatusCode::NOT_FOUND) = error.status() {
+                ResolveError::NotFound
+            } else {
+                ResolveError::Unknown
+            }
+        } else {
+            ResolveError::Unknown
+        }
+    }
+
+    fn id_to_kind(class_id: i32) -> Option<ResourceKind> {
+        match class_id {
+            CLASS_MOD => Some(ResourceKind::Mod),
+            CLASS_MODPACK => Some(ResourceKind::ModPack),
+            CLASS_RESOURCEPACK => Some(ResourceKind::ResourcePack),
+            CLASS_SHADERPACK => Some(ResourceKind::ShaderPack),
+            CLASS_WORLD => Some(ResourceKind::World),
+            _ => None,
+        }
+    }
+
+    fn type_to_loader_id(loader_type: &str) -> Option<&str> {
+        match loader_type {
+            "NeoForge" => Some(profile::COMPONENT_NEOFORGE),
+            "Forge" => Some(profile::COMPONENT_FORGE),
+            "Fabric" => Some(profile::COMPONENT_FABRIC),
+            "Quilt" => Some(profile::COMPONENT_QUILT),
+            _ => None,
+        }
+    }
+
+    fn id_to_loader_type(loader_id: &str) -> Option<&str> {
+        match loader_id {
+            profile::COMPONENT_FORGE => Some("Forge"),
+            profile::COMPONENT_NEOFORGE => Some("NeoForge"),
+            profile::COMPONENT_FABRIC => Some("Fabric"),
+            profile::COMPONENT_QUILT => Some("Quilt"),
+            _ => None,
+        }
+    }
+}
+
+impl Repository for CurseForge {
+    const LABEL: RepositoryLabel = RepositoryLabel::CurseForge;
+
+    fn search(keyword: &str, context: &RepositoryContext) {
+        todo!()
+    }
+
+    fn resolve(
+        project_id: &str,
+        version_id: &str,
+        context: &RepositoryContext,
+    ) -> Result<Package, ResolveError> {
+        let p = Self::get::<Mod>(&context.client, &format!("/v1/mods/{}", project_id))
+            .map_err(Self::make_error)?;
+        let v = if version_id != "*" {
+            Self::get::<File>(
+                &context.client,
+                &format!("/v1/mods/{}/files/{}", project_id, version_id),
+            )
+            .map_err(Self::make_error)?
+        } else {
+            let versions =
+                Self::get::<Vec<File>>(&context.client, &format!("/v1/mods/{}/files", project_id))
+                    .map_err(Self::make_error)?
+                    .into_iter()
+                    .filter(|f| {
+                        let mut pred = true;
+                        if let Some(required) = &context.game_version {
+                            pred &= f.game_versions.contains(required);
+                        };
+                        if let Some(required) = &context.mod_loader {
+                            if let Some(loader) = Self::id_to_loader_type(&required) {
+                                pred &= f.game_versions.iter().any(|j| j == loader);
+                            }
+                        }
+                        pred
+                    });
+            versions
+                .max_by_key(|x| x.file_date)
+                .ok_or(ResolveError::NotFound)?
+        };
+        let kind = Self::id_to_kind(p.class_id).ok_or(ResolveError::UnableToParse)?;
+        let hash = v
+            .hashes
+            .iter()
+            .find(|h| matches!(h.algo, HashAlgo::Sha1))
+            .map(|h| h.value.to_owned());
+        let dependencies = if !v.dependencies.is_empty() {
+            Some(
+                v.dependencies
+                    .iter()
+                    .map(|d| Dependency {
+                        required: matches!(d.relation_type, FileRelationType::RequiredDependency),
+                        purl: Package::make_purl(Self::LABEL.into(), &d.mod_id.to_string(), "*"),
+                    })
+                    .collect(),
+            )
+        } else {
+            None
+        };
+        let mut requirements = Vec::<Requirement>::new();
+        let mut versioned = Vec::<String>::new();
+        let mut compatible = Vec::<String>::new();
+        for other in v.sortable_game_versions {
+            match other.game_version_type_id {
+                Some(75125) => versioned.push(other.game_version),
+                _ => {
+                    if let Some(id) = Self::type_to_loader_id(&other.game_version_name) {
+                        compatible.push(id.to_owned());
+                    } else {
+                        compatible.push(other.game_version_name)
+                    }
+                }
+            }
+        }
+        if !versioned.is_empty() {
+            requirements.push(Requirement::Versioned(
+                "net.minecraft".to_owned(),
+                versioned,
+            ));
+        }
+        if !compatible.is_empty() {
+            requirements.push(Requirement::Compatible(compatible));
+        }
+        Ok(Package {
+            project_id: project_id.to_string(),
+            project_name: p.name,
+            version_id: version_id.to_string(),
+            version_name: v.display_name,
+            author: p
+                .authors
+                .iter()
+                .map(|a| a.name.to_owned())
+                .collect::<Vec<_>>()
+                .join(","),
+            summary: p.summary,
+            thumbnail: p.logo.thumbnail_url,
+            reference: p.links.website_url.unwrap(),
+            kind,
+            filename: v.file_name,
+            download: v.download_url,
+            hash,
+            dependencies,
+            requirements: if !requirements.is_empty() {
+                Some(requirements)
+            } else {
+                None
+            },
+        })
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]

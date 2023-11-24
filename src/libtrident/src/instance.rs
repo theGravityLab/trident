@@ -46,6 +46,10 @@ impl Instance {
         &self.profile
     }
 
+    pub fn profile_mut(&mut self) -> &mut Profile {
+        &mut self.profile
+    }
+
     pub fn home(&self) -> &Path {
         &self.home_path
     }

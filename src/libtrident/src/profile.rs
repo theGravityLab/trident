@@ -4,6 +4,7 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
+use nanoid::nanoid;
 use ron::de::SpannedError;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -11,8 +12,8 @@ use url::Url;
 pub const COMPONENT_MINECRAFT: &str = "net.minecraft";
 pub const COMPONENT_FORGE: &str = "net.minecraftforge";
 pub const COMPONENT_NEOFORGE: &str = "net.neoforged";
-pub const COMPONENT_FABRIC: &str = "net.fabricmc.fabric-loader";
-pub const COMPONENT_QUILT: &str = "org.quiltmc.quilt-loader";
+pub const COMPONENT_FABRIC: &str = "net.fabricmc";
+pub const COMPONENT_QUILT: &str = "org.quiltmc";
 pub const COMPONENT_BUILTIN_STORAGE: &str = "builtin.trident.storage";
 
 pub const LOADERS: [&str; 4] = [
@@ -24,6 +25,7 @@ pub const LOADERS: [&str; 4] = [
 
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct Profile {
+    pub id: String,
     pub name: String,
     pub author: String,
     pub summary: String,
@@ -41,9 +43,15 @@ impl Profile {
     pub fn to_ron(&self) -> Result<String, ron::Error> {
         ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::new().struct_names(true))
     }
+
+    pub fn empty() -> Self {
+        Self {
+            id: nanoid!(),
+            ..Default::default()
+        }
+    }
 }
 
-// 需要有一种方法来求 Metadata 的 digest，用于 polylock 有效性验证
 #[derive(Serialize, Deserialize, Debug, Default, Hash)]
 pub struct Metadata {
     pub version: String,

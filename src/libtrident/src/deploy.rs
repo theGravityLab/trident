@@ -15,7 +15,7 @@
 use crate::deploy::polylock::PolylockData;
 use crate::instance::Instance;
 use crate::profile;
-use crate::repo::{Repository, RepositoryContext};
+use crate::repo::RepositoryContext;
 use crate::resolve::{ResolveEngine, ResolveError, ResolveHandle};
 use crate::resources::Package;
 use std::cell::RefCell;
@@ -55,36 +55,14 @@ impl DeployContext {
 
 pub struct DeployEngine {
     context: Rc<RefCell<DeployContext>>,
-    repo_context: Rc<RepositoryContext>,
-    repos: Rc<Vec<Box<dyn Repository>>>,
     forced: bool,
     max_resolve_depth: usize,
 }
 
 impl DeployEngine {
-    pub fn new(
-        instance: Instance,
-        force: bool,
-        max_resolve_depth: usize,
-        repos: Vec<Box<dyn Repository>>,
-    ) -> Self {
-        let mut repo_context = RepositoryContext {
-            kind: None,
-            game_version: None,
-            mod_loader: None,
-        };
-        repo_context.game_version = Some(instance.profile().metadata.version.to_owned());
-        repo_context.mod_loader = instance
-            .profile()
-            .metadata
-            .loaders
-            .iter()
-            .find(|c| profile::LOADERS.contains(&c.id.as_str()))
-            .map(|c| c.id.to_owned());
+    pub fn new(instance: Instance, force: bool, max_resolve_depth: usize) -> Self {
         Self {
             context: Rc::new(RefCell::new(DeployContext::new(instance))),
-            repo_context: Rc::new(repo_context),
-            repos: Rc::new(repos),
             forced: force,
             max_resolve_depth,
         }
@@ -99,12 +77,25 @@ impl Iterator for DeployEngine {
     fn next(&mut self) -> Option<Self::Item> {
         if self.forced {
             self.forced = false;
-            self.context.borrow_mut().checked = true;
+            let mut context = self.context.borrow_mut();
+            context.checked = true;
+            let repo_context = RepositoryContext {
+                client: reqwest::blocking::Client::new(),
+                kind: None,
+                game_version: Some(context.instance.profile().metadata.version.to_owned()),
+                mod_loader: context
+                    .instance
+                    .profile()
+                    .metadata
+                    .loaders
+                    .iter()
+                    .find(|c| profile::LOADERS.contains(&c.id.as_str()))
+                    .map(|c| c.id.to_owned()),
+            };
             Some(DeployStage::Resolve(ResolveStage::new(
                 Rc::clone(&self.context),
                 self.max_resolve_depth,
-                Rc::clone(&self.repos),
-                Rc::clone(&self.repo_context),
+                Rc::new(repo_context),
             )))
         } else if self.context.borrow().polylock.is_some() {
             if self.context.borrow().downloaded {
@@ -119,19 +110,32 @@ impl Iterator for DeployEngine {
                 Some(DeployStage::Download)
             }
         } else if self.context.borrow().checked {
-            if self.context.borrow().resolved.is_some() {
-                if self.context.borrow().installed.is_some() {
+            let context = self.context.borrow();
+            if context.resolved.is_some() {
+                if context.installed.is_some() {
                     // TODO: build PolylockData from resolved and installed
                     todo!()
                 } else {
                     Some(DeployStage::Install)
                 }
             } else {
+                let repo_context = RepositoryContext {
+                    client: reqwest::blocking::Client::new(),
+                    kind: None,
+                    game_version: Some(context.instance.profile().metadata.version.to_owned()),
+                    mod_loader: context
+                        .instance
+                        .profile()
+                        .metadata
+                        .loaders
+                        .iter()
+                        .find(|c| profile::LOADERS.contains(&c.id.as_str()))
+                        .map(|c| c.id.to_owned()),
+                };
                 Some(DeployStage::Resolve(ResolveStage::new(
                     Rc::clone(&self.context),
                     self.max_resolve_depth,
-                    Rc::clone(&self.repos),
-                    Rc::clone(&self.repo_context),
+                    Rc::new(repo_context),
                 )))
             }
         } else {
@@ -208,7 +212,6 @@ impl ResolveStage {
     fn new(
         context: Rc<RefCell<DeployContext>>,
         max_depth: usize,
-        repos: Rc<Vec<Box<dyn Repository>>>,
         repo_context: Rc<RepositoryContext>,
     ) -> Self {
         let tasks = context
@@ -225,7 +228,6 @@ impl ResolveStage {
         Self {
             context,
             stage_context: Rc::new(RefCell::new(ResolveStageContext {
-                repos: Rc::clone(&repos),
                 finished: Vec::new(),
                 processed: Vec::new(),
                 appended: Some(tasks),
@@ -265,7 +267,7 @@ impl Iterator for ResolveStage {
                     for add in &to_add {
                         context.processed.push(add.clone());
                     }
-                    let engine = ResolveEngine::new(to_add, Rc::clone(&context.repos));
+                    let engine = ResolveEngine::new(to_add);
                     self.engine = Some(engine);
                     self.depth += 1;
                     drop(context);
@@ -289,7 +291,6 @@ impl Drop for ResolveStage {
 }
 
 pub struct ResolveStageContext {
-    repos: Rc<Vec<Box<dyn Repository>>>,
     finished: Vec<Package>,
     processed: Vec<String>,
     appended: Option<Vec<String>>,

@@ -10,8 +10,11 @@ authors = ["Chien Zhang(zqy0224@live.com)"]
 url = { version = "2.4", features = ["serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_repr = "0.1"
+reqwest = { version = "0.11", features = ["blocking", "json"] }
 ron = "0.8"
 thiserror = "1.0"
-nanoid = "0.4" # uuid replaced with
+nanoid = "0.4"
 sanitize-filename = "0.5"
 packageurl = "0.3"

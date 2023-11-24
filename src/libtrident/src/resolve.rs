@@ -1,9 +1,13 @@
-use crate::repo::{Repository, RepositoryContext};
-use crate::resources::Package;
-use packageurl::PackageUrl;
 use std::rc::Rc;
 use std::str::FromStr;
+
+use packageurl::PackageUrl;
 use thiserror::Error;
+
+use crate::repo::curseforge::CurseForge;
+use crate::repo::modrinth::Modrinth;
+use crate::repo::{Repository, RepositoryContext, RepositoryLabel};
+use crate::resources::Package;
 
 #[derive(Debug, Error)]
 pub enum ResolveError {
@@ -22,13 +26,14 @@ pub enum ResolveError {
 }
 
 pub struct ResolveEngine {
-    repos: Rc<Vec<Box<dyn Repository>>>,
     tasks: Vec<String>,
 }
 
 impl ResolveEngine {
-    pub fn new(tasks: Vec<String>, repos: Rc<Vec<Box<dyn Repository>>>) -> Self {
-        Self { repos, tasks }
+    pub fn new(tasks: Vec<String>) -> Self {
+        Self {
+            tasks,
+        }
     }
 }
 
@@ -37,10 +42,7 @@ impl Iterator for ResolveEngine {
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(item) = self.tasks.pop() {
-            Some(ResolveHandle {
-                task: item,
-                repos: Rc::clone(&self.repos),
-            })
+            Some(ResolveHandle { task: item })
         } else {
             None
         }
@@ -48,7 +50,6 @@ impl Iterator for ResolveEngine {
 }
 
 pub struct ResolveHandle {
-    repos: Rc<Vec<Box<dyn Repository>>>,
     task: String,
 }
 
@@ -58,8 +59,11 @@ impl ResolveHandle {
             if let Some(vid) = purl.version() {
                 let rid = purl.ty();
                 let pid = purl.name();
-                if let Some(repo) = self.repos.iter().find(|r| r.id() == rid) {
-                    repo.resolve(pid, vid, context)
+                if let Ok(repo) = RepositoryLabel::try_from(rid) {
+                    match repo {
+                        RepositoryLabel::CurseForge => CurseForge::resolve(pid, vid, context),
+                        RepositoryLabel::Modrinth => Modrinth::resolve(pid, vid, context),
+                    }
                 } else {
                     Err(ResolveError::NotFound)
                 }

@@ -1,3 +1,5 @@
+pub use url::Url as Url;
+
 pub mod deploy;
 pub mod download;
 pub mod instance;
