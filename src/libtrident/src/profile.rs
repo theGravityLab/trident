@@ -4,7 +4,6 @@ use std::{
 };
 
 use chrono::{DateTime, Utc};
-use nanoid::nanoid;
 use ron::de::SpannedError;
 use serde::{Deserialize, Serialize};
 use url::Url;
@@ -23,9 +22,8 @@ pub const LOADERS: [&str; 4] = [
     COMPONENT_NEOFORGE,
 ];
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct Profile {
-    pub id: String,
     pub name: String,
     pub author: String,
     pub summary: String,
@@ -44,15 +42,31 @@ impl Profile {
         ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::new().struct_names(true))
     }
 
-    pub fn empty() -> Self {
-        Self {
-            id: nanoid!(),
-            ..Default::default()
+    pub fn to_entry(self, key: &str) -> Entry {
+        Entry {
+            key: key.to_owned(),
+            name: self.name,
+            author: self.author,
+            reference: self.reference,
+            summary: self.summary,
+            thumbnail: self.thumbnail,
+            version: self.metadata.version,
         }
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Default, Hash)]
+#[derive(Debug, Clone)]
+pub struct Entry {
+    pub key: String,
+    pub name: String,
+    pub author: String,
+    pub summary: String,
+    pub version: String,
+    pub thumbnail: Option<Url>,
+    pub reference: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Default, Hash, Clone)]
 pub struct Metadata {
     pub version: String,
     pub loaders: Vec<Loader>,
@@ -67,7 +81,7 @@ impl Metadata {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Hash)]
+#[derive(Serialize, Deserialize, Debug, Hash, Clone)]
 pub struct Loader {
     pub id: String,
     pub version: String,
@@ -82,7 +96,7 @@ impl Loader {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, Hash)]
+#[derive(Serialize, Deserialize, Debug, Hash, Clone)]
 pub struct Layer {
     pub from: Option<String>,
     pub summary: String,
@@ -105,14 +119,14 @@ impl Layer {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TimelinePoint {
     time: DateTime<Utc>,
     action: Action,
     result: ActionResult,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Action {
     Create(String),
     Restore,
@@ -120,7 +134,7 @@ pub enum Action {
     Update(String),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum ActionResult {
     Done,
     Finish(DateTime<Utc>),

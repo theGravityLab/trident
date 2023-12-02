@@ -3,7 +3,10 @@ mod store;
 use std::path::PathBuf;
 use thiserror::Error;
 
-use crate::{instance::Instance, profile::Profile};
+use crate::{
+    instance::Instance,
+    profile::{Entry, Profile},
+};
 
 const INSTANCE_DIR: &str = "instances";
 const STORAGE_DIR: &str = "storage";
@@ -30,7 +33,12 @@ impl InstantMachine {
         Self { root: root.into() }
     }
 
-    pub fn entries(&self) -> Vec<String> {
+    pub fn get_instance(&self, key: &str) -> Result<Instance, MachineError> {
+        let file = self.root.join(INSTANCE_DIR).join(format!("{}.ron", key));
+        Instance::from_path(file).map_err(|_| MachineError::Unreachable)
+    }
+
+    pub fn scan(&self) -> Vec<Entry> {
         let dir = self.root.join(INSTANCE_DIR);
         if let Ok(read) = dir.read_dir() {
             read.filter_map(|p| p.ok())
@@ -39,19 +47,27 @@ impl InstantMachine {
                         && p.path().extension().map(|e| e.to_str()) == Some(Some("ron"))
                 })
                 .filter_map(|p| {
-                    p.path()
-                        .file_stem()
-                        .map(|s| s.to_str().map(|f| f.to_owned()))
+                    if let Some(stem) = p.path().file_stem() {
+                        if let Some(key) = stem.to_str() {
+                            if let Ok(content) = std::fs::read_to_string(p.path()) {
+                                if let Ok(profile) = Profile::from_ron(&content) {
+                                    Some(profile.to_entry(key))
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    }
                 })
-                .filter_map(|f| f)
                 .collect()
         } else {
             vec![]
         }
-    }
-
-    pub fn get_instance(&self, key: &str) -> Result<Instance, MachineError> {
-        let file = self.root.join(INSTANCE_DIR).join(format!("{}.ron", key));
-        Instance::from_path(file).map_err(|_| MachineError::Unreachable)
     }
 }
