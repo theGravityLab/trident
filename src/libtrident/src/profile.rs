@@ -41,29 +41,20 @@ impl Profile {
     pub fn to_ron(&self) -> Result<String, ron::Error> {
         ron::ser::to_string_pretty(self, ron::ser::PrettyConfig::new().struct_names(true))
     }
-
-    pub fn to_entry(self, key: &str) -> Entry {
-        Entry {
-            key: key.to_owned(),
-            name: self.name,
-            author: self.author,
-            reference: self.reference,
-            summary: self.summary,
-            thumbnail: self.thumbnail,
-            version: self.metadata.version,
-        }
-    }
 }
 
-#[derive(Debug, Clone)]
 pub struct Entry {
     pub key: String,
-    pub name: String,
-    pub author: String,
-    pub summary: String,
-    pub version: String,
-    pub thumbnail: Option<Url>,
-    pub reference: Option<String>,
+    pub profile: Profile,
+}
+
+impl Entry {
+    pub fn from_profile(key: String, profile: Profile) -> Self {
+        Self {
+            key,
+            profile,
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Hash, Clone)]

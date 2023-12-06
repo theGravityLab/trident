@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::{
-    instance::Instance,
     profile::{Entry, Profile},
 };
 
@@ -33,11 +32,6 @@ impl InstantMachine {
         Self { root: root.into() }
     }
 
-    pub fn get_instance(&self, key: &str) -> Result<Instance, MachineError> {
-        let file = self.root.join(INSTANCE_DIR).join(format!("{}.ron", key));
-        Instance::from_path(file).map_err(|_| MachineError::Unreachable)
-    }
-
     pub fn scan(&self) -> Vec<Entry> {
         let dir = self.root.join(INSTANCE_DIR);
         if let Ok(read) = dir.read_dir() {
@@ -51,7 +45,7 @@ impl InstantMachine {
                         if let Some(key) = stem.to_str() {
                             if let Ok(content) = std::fs::read_to_string(p.path()) {
                                 if let Ok(profile) = Profile::from_ron(&content) {
-                                    Some(profile.to_entry(key))
+                                    Some(Entry::from_profile(key.to_owned(), profile))
                                 } else {
                                     None
                                 }
