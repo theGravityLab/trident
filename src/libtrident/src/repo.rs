@@ -8,7 +8,7 @@ pub mod modrinth;
 
 pub trait Repository {
     const LABEL: RepositoryLabel;
-    fn search(keyword: &str, context: &RepositoryContext);
+    fn search(keyword: &str, page: usize, limit: usize, context: &RepositoryContext);
     fn resolve(
         project_id: &str,
         version_id: &str,

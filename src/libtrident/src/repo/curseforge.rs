@@ -86,7 +86,7 @@ impl CurseForge {
 impl Repository for CurseForge {
     const LABEL: RepositoryLabel = RepositoryLabel::CurseForge;
 
-    fn search(keyword: &str, context: &RepositoryContext) {
+    fn search(keyword: &str, page: usize, limit: usize, context: &RepositoryContext) {
         todo!()
     }
 
@@ -102,7 +102,7 @@ impl Repository for CurseForge {
                 &context.client,
                 &format!("/v1/mods/{}/files/{}", project_id, version_id),
             )
-            .map_err(Self::make_error)?
+                .map_err(Self::make_error)?
         } else {
             let versions =
                 Self::get::<Vec<File>>(&context.client, &format!("/v1/mods/{}/files", project_id))

@@ -7,7 +7,7 @@ pub struct Modrinth {}
 impl Repository for Modrinth {
     const LABEL: RepositoryLabel = RepositoryLabel::Modrinth;
 
-    fn search(keyword: &str, context: &RepositoryContext) {
+    fn search(keyword: &str, page: usize, limit: usize, context: &RepositoryContext) {
         todo!()
     }
 
