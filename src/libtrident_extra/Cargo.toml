@@ -1,0 +1,7 @@
+[package]
+name = "libtrident_extra"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+libtrident = { path = "../libtrident" }
