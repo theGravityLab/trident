@@ -17,7 +17,8 @@ Cargo.lock
 .idea/
 .vscode/
 
-.trident/
-
 # Tauri
 dist/
+
+# Instance build output
+build/
